@@ -5,38 +5,43 @@ library(tidyjson)
 library(ggplot2)
 library(lubridate)
 
-
+#load data
 data_json <- rjson::fromJSON(file="watch-history.json")
 data <- spread_all(data_json)
 
+#compute some date columns
 data <- data |> mutate(time = as_datetime(time), hour = hour(time), date = as_date(time), 
                        weekday = wday(time, label = TRUE ) )  |>
                 select( title, titleUrl, time, date, hour, weekday) |> drop_na() |> arrange(time)
 
+#videos per day over time
 ggplot(data |> group_by(date) |> summarise(  n = n()  ) ) +
   aes(x=date, y=n) +
   geom_point()
 
-
+#watch density of some days
 ggplot(head(data, 300)) +
   aes(x=hour) +
   facet_wrap(vars(date))+
   geom_density(aes(x=hour))
 
-
+#watch density of top days
 ggplot(head(data |> group_by(date) |> mutate(n= n()) |> arrange(desc(n)),  2500) ) +
   aes(x=hour, n=n) +
   facet_wrap(vars(date))+
   annotate("text", label = "help", size = 3, x = 3, y = 0.2) +
   geom_density(aes(x=hour))
 
+
+#average daily density
 ggplot(data |> group_by(hour) |> summarise(bin = n())) +
   geom_line(aes(x=hour, y= bin/26280))+
   geom_point(aes(x=hour, y= bin/26280)) 
 
+#histogram of daily view counts
 ggplot(data |> group_by(date) |> mutate(n = n()) |> distinct(n))+
   aes(x=n)+
-  geom_density()
+  geom_histogram()
 
 
 #the day i watched 180 videos
