@@ -13,7 +13,7 @@ data <- data |> mutate(time = as_datetime(time), hour = hour(time), date = as_da
                        weekday = wday(time, label = TRUE ) )  |>
                 select( title, titleUrl, time, date, hour, weekday) |> drop_na() |> arrange(time)
 
-ggplot(data |> group_by(date) |> summarise(  n = n()  ) ) +s
+ggplot(data |> group_by(date) |> summarise(  n = n()  ) ) +
   aes(x=date, y=n) +
   geom_point()
 
@@ -27,12 +27,16 @@ ggplot(head(data, 300)) +
 ggplot(head(data |> group_by(date) |> mutate(n= n()) |> arrange(desc(n)),  2500) ) +
   aes(x=hour, n=n) +
   facet_wrap(vars(date))+
-  annotate("text", label = "chicken", size = 3, x = 3, y = 0.2) +
+  annotate("text", label = "help", size = 3, x = 3, y = 0.2) +
   geom_density(aes(x=hour))
 
 ggplot(data |> group_by(hour) |> summarise(bin = n())) +
   geom_line(aes(x=hour, y= bin/26280))+
   geom_point(aes(x=hour, y= bin/26280)) 
+
+ggplot(data |> group_by(date) |> mutate(n = n()) |> distinct(n))+
+  aes(x=n)+
+  geom_density()
 
 
 #the day i watched 180 videos
