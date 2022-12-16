@@ -5,14 +5,13 @@ library(tidyjson)
 library(ggplot2)
 library(lubridate)
 
-#load data
-data_json <- rjson::fromJSON(file="watch-history.json")
-data <- spread_all(data_json)
+#load data a
+data_json <- jsonlite::fromJSON(txt="data/watch-history.json", flatten=TRUE)
+data <- tibble(data_json)
 
-#compute some date columns
-data <- data |> mutate(time = as_datetime(time), hour = hour(time), date = as_date(time), 
-                       weekday = wday(time, label = TRUE ) )  |>
-                select( title, titleUrl, time, date, hour, weekday) |> drop_na() |> arrange(time)
+data <- data |> unnest(subtitles) |> mutate(time = as_datetime(time), hour = hour(time), date = as_date(time), 
+                       weekday = wday(time, label = TRUE ))   |>
+                select( title, titleUrl, time, date, hour, weekday, channel=name) |> drop_na() |> arrange(time)
 
 #videos per day over time
 ggplot(data |> group_by(date) |> summarise(  n = n()  ) ) +
@@ -47,7 +46,7 @@ ggplot(data |> group_by(date) |> mutate(n = n()) |> distinct(n))+
 #the day i watched 180 videos
 ggplot(data |> ungroup() |> filter(date==as_date("2021-05-13"))) +
   aes(x=time) +
-  geom_density()
+  geom_histogram()
 
 
 
@@ -57,13 +56,13 @@ x <- data |> group_by(date) |> summarise(  n = n()  ) |> arrange(date) |>
 x |> group_by(delta_t) |> summarise(n = n())
 
 
+y <- data |> 
+  mutate( delta_t = time[row_number()+1] - time) |> drop_na()
 
 
 ggplot(y) +
   geom_density(aes(x=delta_t))+
   xlim(0,10000)
-
-
 
 
 ggplot(data |> group_by(date) |> summarise(videos_that_day = n()) |>
@@ -77,10 +76,37 @@ ggplot(data |> group_by(date) |> summarise(videos_that_day = n()) |>
 
 
 
-response_json <- GET("https://www.googleapis.com/youtube/v3/videos?id=WmRSBSdCUpQ&part=contentDetails&key=AIzaSyBZpYJo1SjGE_eGTze3RclPnDQoHony9hg")
+response <- GET("https://www.googleapis.com/youtube/v3/videos?id=WmRSBSdCUpQ&part=contentDetails&key=AIzaSyBZpYJo1SjGE_eGTze3RclPnDQoHony9hg")
 
-response <- rjson::fromJSON(response_json)
-play_time <- fromJSON(rawToChar(response$content))$items[[1]]$contentDetails$duration
+play_time <- content(response)$items[[1]]$contentDetails$duration |> 
+             str_remove_all("[PTS]") |>
+             str_split("M")
+play_time_seconds = strtoi(play_time[[1]][1])*60+ strtoi(play_time[[1]][2])
+
+
+words = c("chicken"=0)
+for(i in 1:48498){
+  for(w in str_split(data$title[i]," ")[[1]]){
+    if (is.na(words[w])){ words[w]=1 
+    } else {
+      words[w]=words[w]+1
+     }
+    }
+}
+
+
+t<-tibble(word="chicken", count=0)
+
+for(key in names(words)){
+  t<-add_row(t, word=key, count=words[key])
+}
+
+
+
+
+
+
+
 
 
 

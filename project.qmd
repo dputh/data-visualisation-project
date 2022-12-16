@@ -1,22 +1,328 @@
 ---
-title: "project"
+title: "project data visualisation"
 format: html
 editor: visual
 ---
 
 ```{r}
-1 + 1
+library(dplyr)
+library(rjson)
+library(tidyverse)
+library(tidyjson)
+library(ggplot2)
+library(lubridate)
+library(gganimate)
+library(gapminder)
+library(gifski)
+library(ggthemes)
 ```
 
-You can add options to executable code like this
+load data and compute some date columns:
 
 ```{r}
-#| echo: false
-2 * 2
+data_json <- jsonlite::fromJSON(txt="data/watch-history.json", flatten=TRUE)
+data <- tibble(data_json)
+data <- data |> unnest(subtitles) |> 
+                mutate(time = as_datetime(time), 
+                       hour = hour(time), 
+                       week = week(time),
+                       month = month.abb[month(time)],
+                       year = year(time),
+                       date = as_date(time), 
+                       weekday = wday(time, label = TRUE )) |>
+                select( title, titleUrl, time, date, hour, weekday, week, month, year, channel=name) |> 
+                drop_na() |> 
+                arrange(time)
 ```
 
-The `echo: false` option disables the printing of code (only output is displayed).
+videos per day over time
 
 ```{r}
+ggplot(data |> group_by(date) |> summarise(n = n())) +
+  aes(x=date, y=n) +
+  geom_point(color="#586e75")+ theme_solarized_2(light=FALSE)+ 
+  theme(
+    panel.background = element_rect(fill=NA),
+    plot.background = element_rect(fill="#111111"),
+    legend.key = element_blank(),
+    legend.background = element_blank()
+  )
+```
 
+watch densities of some days
+
+```{r}
+ggplot(head(data, 300)) +
+  aes(x=hour) +
+  facet_wrap(vars(date))+
+  geom_density(aes(x=hour), color="#586e75") + 
+  theme_solarized_2(light=FALSE)+ 
+  theme(
+    panel.background = element_rect(fill=NA),
+    plot.background = element_rect(fill="#111111"),
+    legend.key = element_blank(),
+    legend.background = element_blank()
+  )
+```
+
+watch density of top days
+
+```{r}
+ggplot(head(data |> group_by(date) |> mutate(n= n()) |> arrange(desc(n)),  3500) ) +
+  aes(x=hour, group=n) +
+  facet_wrap(vars(reorder(date,-n)))+
+  geom_text(mapping=aes(x=-Inf,y=-Inf,label=n, vjust=-3, hjust=-0.1),color="#586e75")+
+  ylim(0,0.2)+
+  geom_density(aes(x=hour),color="#586e75")+ theme_solarized_2(light=FALSE)+ 
+  theme(
+    panel.background = element_rect(fill=NA),
+    plot.background = element_rect(fill="#111111"),
+    legend.key = element_blank(),
+    legend.background = element_blank()
+  )
+```
+
+average daily density
+
+```{r}
+ggplot(data |> group_by(hour) |> summarise(bin = n())) +
+  geom_line(aes(x=hour, y= bin/26280),color="#586e75")+
+  geom_point(aes(x=hour, y= bin/26280), color="#586e75") + theme_solarized_2(light=FALSE)+ 
+  theme(
+    panel.background = element_rect(fill=NA),
+    plot.background = element_rect(fill="#111111"),
+    legend.key = element_blank(),
+    legend.background = element_blank()
+  )
+```
+
+histogram of daily view counts
+
+```{r}
+ggplot(data |> group_by(date) |> mutate(n = n()) |> distinct(n))+
+  aes(x=n)+
+  geom_histogram(fill="#586e75", bins = 170)+ theme_solarized_2(light=FALSE)+ 
+  theme(
+    panel.background = element_rect(fill=NA),
+    plot.background = element_rect(fill="#111111"),
+    legend.key = element_blank(),
+    legend.background = element_blank()
+  )
+```
+
+spacing of "watch-days"
+
+```{r}
+x <- data |> group_by(date) |> summarise(  n = n()  ) |> arrange(date) |> 
+             mutate( delta_t = date[row_number()+1] - date) |> drop_na()
+
+x |> group_by(delta_t) |> summarise(n = n())
+```
+
+the day I watched no videos?
+
+```{r}
+data |> mutate( delta_t = date[row_number()+1] - date) |> 
+        drop_na() |> 
+        arrange(desc(delta_t)) |>
+        select(date, delta_t)
+```
+
+density of time between videos
+
+```{r}
+y <- data |> 
+  mutate( delta_t = time[row_number()+1] - time) |> drop_na()
+
+
+ggplot(y) +
+  geom_density(aes(x=delta_t),fill="#586e75")+
+  xlim(0,10000)+ theme_solarized_2(light=FALSE)+ 
+  theme(
+    panel.background = element_rect(fill=NA),
+    plot.background = element_rect(fill="#111111"),
+    legend.key = element_blank(),
+    legend.background = element_blank()
+  )
+```
+
+correlation between successive days
+
+```{r}
+ggplot(data |> group_by(date) |> summarise(videos_that_day = n()) |>
+         mutate(videos_previous_day = videos_that_day[row_number()+1]))+
+  aes(y=videos_that_day, x = videos_previous_day)+
+  scale_x_continuous(trans='log10')+
+  scale_y_continuous(trans='log10')+
+  geom_point(color="#586e75")+ theme_solarized_2(light=FALSE)+ 
+  theme(
+    panel.background = element_rect(fill=NA),
+    plot.background = element_rect(fill="#111111"),
+    legend.key = element_blank(),
+    legend.background = element_blank()
+  )
+
+
+lm<-lm(videos_that_day~videos_previous_day, data |> group_by(date) |> summarise(videos_that_day = n()) |>
+         mutate(videos_previous_day = videos_that_day[row_number()+1]))
+summary(lm)
+```
+
+weekday distribution
+
+```{r}
+ggplot(data |> mutate(weekday = factor(weekday, levels = c("Mon","Tue","Wed","Thu","Fri","Sat","Sun"))) |>arrange(weekday) ) +
+  aes(x=weekday)+
+  geom_bar(fill="#586e75")+ theme_solarized_2(light=FALSE)+ 
+  theme(
+    panel.background = element_rect(fill=NA),
+    plot.background = element_rect(fill="#111111"),
+    legend.key = element_blank(),
+    legend.background = element_blank()
+  )
+
+```
+
+```{r}
+ggplot(data |> group_by(channel) |> summarise(n=n()) |> arrange(desc(n)) |> head(20)) +
+  aes(y=reorder(channel,n), x=n)+
+  geom_bar(stat = "identity", fill="#586e75")+ theme_solarized_2(light=FALSE)+ 
+  theme(
+    panel.background = element_rect(fill=NA),
+    plot.background = element_rect(fill="#111111"),
+    legend.key = element_blank(),
+    legend.background = element_blank()
+  )
+```
+
+```{r}
+ggplot(data |> filter(date > "2019-11-14") |> filter(year=="2021") |> mutate(month = factor(month, levels = c("Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov", "Dec"))) |> group_by(month) |> summarise(n=n())) + 
+  aes(y = month , x=n) +
+  ggtitle("2021")+
+  geom_bar(stat="identity",fill="#586e75")+ theme_solarized_2(light=FALSE)+ 
+  theme(
+    panel.background = element_rect(fill=NA),
+    plot.background = element_rect(fill="#111111"),
+    legend.key = element_blank(),
+    legend.background = element_blank()
+  )
+
+ggplot(data |> filter(date > "2019-11-14") |> filter(year=="2020") |> mutate(month = factor(month, levels = c("Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov", "Dec"))) |> group_by(month) |> summarise(n=n()))+
+  aes(y = month , x=n) +
+  ggtitle("2020")+
+  geom_bar(stat="identity",fill="#586e75")+ theme_solarized_2(light=FALSE)+ 
+  theme(
+    panel.background = element_rect(fill=NA),
+    plot.background = element_rect(fill="#111111"),
+    legend.key = element_blank(),
+    legend.background = element_blank()
+  )
+```
+
+what happened during may 2021????
+
+```{r}
+data |> 
+  filter(year=="2021", month=="May") |> 
+  mutate(day_of_month = day(date)) |> 
+  group_by(day_of_month, weekday) |> 
+  summarise(n=n()) |>
+  ggplot()+
+  aes(x = day_of_month, y = n, fill=weekday)+
+  geom_bar(stat="identity") + theme_solarized_2(light=FALSE)+ 
+  theme(
+    panel.background = element_rect(fill=NA),
+    plot.background = element_rect(fill="#111111"),
+    legend.key = element_blank(),
+    legend.background = element_blank()
+  )
+```
+
+the day i watched 179 videos
+
+```{r}
+ggplot(data |> ungroup() |> filter(date==as_date("2021-05-13"))) +
+  aes(x=time) +
+  geom_histogram(fill="#586e75", bins=75)+ theme_solarized_2(light=FALSE)+ 
+  theme(
+    panel.background = element_rect(fill=NA),
+    plot.background = element_rect(fill="#111111"),
+    legend.key = element_blank(),
+    legend.background = element_blank()
+  )
+```
+
+```{r}
+top_channels <- data  |> group_by(channel) |> summarise(n=n()) |> arrange(desc(n)) |> head(7) |> select("channel")
+
+a<-data |> 
+  mutate(week_since_beginning = week + 53*(year-2019)) |> 
+  filter( channel %in% pull(top_channels, channel)) |> 
+  select(channel, week_since_beginning) |> 
+  group_by(week_since_beginning, channel) |> 
+  summarise(n=n()) |> 
+  pivot_wider(values_from = n, names_from = channel) |> 
+  mutate(across(everything(), ~replace_na(.x, 0))) |> 
+  ungroup() |> 
+  mutate( across( -week_since_beginning  , ~  cumsum(.x)) ) |> 
+  pivot_longer(cols = !starts_with("week"), names_to = "channel", values_to = "n")
+
+p<-ggplot(a)+
+  aes(x = week_since_beginning, y= n, color=channel)+
+  geom_line() + 
+  theme_solarized_2(light=FALSE) + 
+  theme(
+    panel.background = element_rect(fill=NA),
+    plot.background = element_rect(fill="#111111"),
+    legend.key = element_blank(),
+    legend.background = element_blank(),
+    legend.position = "none"
+       ) +
+  labs(x = "weeks since september 2019", y = "videos watched")
+
+
+p.animation = p + 
+             geom_point() +
+             geom_text(aes(label = channel), hjust=1, vjust =-0.3) + 
+             transition_reveal(week_since_beginning) + 
+             view_follow()
+
+anim_save("animated_lines.gif",p.animation, renderer = gifski_renderer(loop = FALSE))
+```
+
+```{r}
+p2<-ggplot(b)+
+  aes(x = week_since_beginning, y= n, color=channel, label = channel)+
+  geom_line() + 
+  theme_solarized_2(light=FALSE) + 
+  theme(
+    panel.background = element_rect(fill=NA),
+    plot.background = element_rect(fill="#111111"),
+    legend.key = element_blank(),
+    legend.background = element_blank(),
+  )+
+  labs(x = "weeks since september 2019", y = "videos watched") 
+
+p2
+```
+
+```{r}
+a<-data |> mutate(week_since_beginning = week + 53*(year-2019)) |> group_by(week_since_beginning) |> summarise(n=n()) |> mutate( n = cumsum(n))
+
+ggplot(a)+
+  aes(x=week_since_beginning, y=n)+
+  theme_solarized_2(light=FALSE)+
+  theme(
+    panel.background = element_rect(fill=NA),
+    plot.background = element_rect(fill="#111111"),
+    legend.key = element_blank(),
+    legend.background = element_blank(),
+    legend.position = "none"
+  )+
+  geom_line(color="#586e75")
+
+```
+
+```{r}
+data |> select(title)
 ```
