@@ -288,10 +288,12 @@ p.animation = p +
              view_follow()
 
 anim_save("animated_lines.gif",p.animation, renderer = gifski_renderer(loop = FALSE))
+
+p.animation
 ```
 
 ```{r}
-p2<-ggplot(b)+
+p2<-ggplot(a)+
   aes(x = week_since_beginning, y= n, color=channel, label = channel)+
   geom_line() + 
   theme_solarized_2(light=FALSE) + 
