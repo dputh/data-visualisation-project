@@ -1,10 +1,17 @@
 ---
-title: "project data visualisation"
+title: "Why I should go outside more."
+author: "Daniel Puth"
 format: html
+theme: darkly
 editor: visual
+tbl-colwidths: [75,25]
 ---
 
-```{r}
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE) 
+```
+
+```{r, include=FALSE}
 library(dplyr)
 library(rjson)
 library(tidyverse)
@@ -15,9 +22,11 @@ library(gganimate)
 library(gapminder)
 library(gifski)
 library(ggthemes)
+library(knitr)
+library(kableExtra)
 ```
 
-load data and compute some date columns:
+We load data and compute some date columns:
 
 ```{r}
 data_json <- jsonlite::fromJSON(txt="data/watch-history.json", flatten=TRUE)
@@ -33,14 +42,27 @@ data <- data |> unnest(subtitles) |>
                 select( title, titleUrl, time, date, hour, weekday, week, month, year, channel=name) |> 
                 drop_na() |> 
                 arrange(time)
+kable(data |> slice(2:3))
 ```
 
-videos per day over time
+Average and standard deviation of daily view count:
 
 ```{r}
-ggplot(data |> group_by(date) |> summarise(n = n())) +
-  aes(x=date, y=n) +
-  geom_point(color="#586e75")+ theme_solarized_2(light=FALSE)+ 
+average_daily_views <- data |> group_by(date) |> summarise(views = n()) |> summarise(across(where(is.numeric), mean))
+
+std_daily_views <- data |> group_by(date) |> summarise(views = n()) |> summarise(sd_var1 = sd(views, na.rm=TRUE))
+
+kable(tribble( ~'Average views', ~'Standard deviation', round(average_daily_views,1),round(std_daily_views,1)),  align = "l")
+
+```
+
+Daily view count over time:
+
+```{r}
+ggplot(data |> group_by(date) |> summarise(views = n())) +
+  aes(x=date, y=views) +
+  geom_point(color="#586e75") + theme_solarized_2(light=FALSE) + 
+  geom_hline(yintercept = 40.9, color ="red")+
   theme(
     panel.background = element_rect(fill=NA),
     plot.background = element_rect(fill="#111111"),
@@ -49,7 +71,7 @@ ggplot(data |> group_by(date) |> summarise(n = n())) +
   )
 ```
 
-watch densities of some days
+Some daily view count densities:
 
 ```{r}
 ggplot(head(data, 300)) +
@@ -61,14 +83,15 @@ ggplot(head(data, 300)) +
     panel.background = element_rect(fill=NA),
     plot.background = element_rect(fill="#111111"),
     legend.key = element_blank(),
-    legend.background = element_blank()
+    legend.background = element_blank(),
+    axis.title.y = element_blank()
   )
 ```
 
-watch density of top days
+Daily view densities of the top 12 highest view count days.
 
 ```{r}
-ggplot(head(data |> group_by(date) |> mutate(n= n()) |> arrange(desc(n)),  3500) ) +
+ggplot(head(data |> group_by(date) |> mutate(n= n()) |> arrange(desc(n)),  1500) ) +
   aes(x=hour, group=n) +
   facet_wrap(vars(reorder(date,-n)))+
   geom_text(mapping=aes(x=-Inf,y=-Inf,label=n, vjust=-3, hjust=-0.1),color="#586e75")+
@@ -78,11 +101,12 @@ ggplot(head(data |> group_by(date) |> mutate(n= n()) |> arrange(desc(n)),  3500)
     panel.background = element_rect(fill=NA),
     plot.background = element_rect(fill="#111111"),
     legend.key = element_blank(),
-    legend.background = element_blank()
+    legend.background = element_blank(),
+    axis.title.y = element_blank()
   )
 ```
 
-average daily density
+Average daily density:
 
 ```{r}
 ggplot(data |> group_by(hour) |> summarise(bin = n())) +
@@ -96,7 +120,7 @@ ggplot(data |> group_by(hour) |> summarise(bin = n())) +
   )
 ```
 
-histogram of daily view counts
+Histogram of daily view counts:
 
 ```{r}
 ggplot(data |> group_by(date) |> mutate(n = n()) |> distinct(n))+
@@ -110,25 +134,29 @@ ggplot(data |> group_by(date) |> mutate(n = n()) |> distinct(n))+
   )
 ```
 
-spacing of "watch-days"
+Space between of "watch-days" (days during which at least one video has been watched):
 
 ```{r}
 x <- data |> group_by(date) |> summarise(  n = n()  ) |> arrange(date) |> 
              mutate( delta_t = date[row_number()+1] - date) |> drop_na()
 
-x |> group_by(delta_t) |> summarise(n = n())
+t1 <- x |> group_by(delta_t) |> summarise(n = n())
+
+
+kable(t1)
 ```
 
-the day I watched no videos?
+The day I watched no video?!
 
 ```{r}
-data |> mutate( delta_t = date[row_number()+1] - date) |> 
+t2 <- data |> mutate( delta_t = date[row_number()+1] - date) |> 
         drop_na() |> 
         arrange(desc(delta_t)) |>
-        select(date, delta_t)
+        select(date, delta_t) 
+kable(head(t2,10))
 ```
 
-density of time between videos
+Density of the time between starting one video and starting the next one:
 
 ```{r}
 y <- data |> 
@@ -137,38 +165,37 @@ y <- data |>
 
 ggplot(y) +
   geom_density(aes(x=delta_t),fill="#586e75")+
-  xlim(0,10000)+ theme_solarized_2(light=FALSE)+ 
+  xlim(0,3600)+ theme_solarized_2(light=FALSE)+ 
   theme(
     panel.background = element_rect(fill=NA),
     plot.background = element_rect(fill="#111111"),
     legend.key = element_blank(),
     legend.background = element_blank()
-  )
+  ) + labs(x = "time elapsed (seconds)", y = "")
 ```
 
-correlation between successive days
+Correlation of view count between successive days:
 
 ```{r}
 ggplot(data |> group_by(date) |> summarise(videos_that_day = n()) |>
          mutate(videos_previous_day = videos_that_day[row_number()+1]))+
   aes(y=videos_that_day, x = videos_previous_day)+
-  scale_x_continuous(trans='log10')+
-  scale_y_continuous(trans='log10')+
   geom_point(color="#586e75")+ theme_solarized_2(light=FALSE)+ 
   theme(
     panel.background = element_rect(fill=NA),
     plot.background = element_rect(fill="#111111"),
     legend.key = element_blank(),
     legend.background = element_blank()
-  )
+  ) + labs(x = "View count today", y = "View count yesterday")
 
 
 lm<-lm(videos_that_day~videos_previous_day, data |> group_by(date) |> summarise(videos_that_day = n()) |>
          mutate(videos_previous_day = videos_that_day[row_number()+1]))
-summary(lm)
+
+kable(c(summary(lm)$r.squared), col.names=c("R squared of linear model"), align = "l")
 ```
 
-weekday distribution
+Weekday distribution of view count:
 
 ```{r}
 ggplot(data |> mutate(weekday = factor(weekday, levels = c("Mon","Tue","Wed","Thu","Fri","Sat","Sun"))) |>arrange(weekday) ) +
@@ -179,9 +206,11 @@ ggplot(data |> mutate(weekday = factor(weekday, levels = c("Mon","Tue","Wed","Th
     plot.background = element_rect(fill="#111111"),
     legend.key = element_blank(),
     legend.background = element_blank()
-  )
+  ) + labs(y = "daily views")
 
 ```
+
+My top 20 most watched channels:
 
 ```{r}
 ggplot(data |> group_by(channel) |> summarise(n=n()) |> arrange(desc(n)) |> head(20)) +
@@ -192,8 +221,10 @@ ggplot(data |> group_by(channel) |> summarise(n=n()) |> arrange(desc(n)) |> head
     plot.background = element_rect(fill="#111111"),
     legend.key = element_blank(),
     legend.background = element_blank()
-  )
+  ) + labs(y="channel", x = "views")
 ```
+
+Number of views by month for 2021 and 2020:
 
 ```{r}
 ggplot(data |> filter(date > "2019-11-14") |> filter(year=="2021") |> mutate(month = factor(month, levels = c("Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov", "Dec"))) |> group_by(month) |> summarise(n=n())) + 
@@ -205,7 +236,7 @@ ggplot(data |> filter(date > "2019-11-14") |> filter(year=="2021") |> mutate(mon
     plot.background = element_rect(fill="#111111"),
     legend.key = element_blank(),
     legend.background = element_blank()
-  )
+  ) + labs (x="views")
 
 ggplot(data |> filter(date > "2019-11-14") |> filter(year=="2020") |> mutate(month = factor(month, levels = c("Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov", "Dec"))) |> group_by(month) |> summarise(n=n()))+
   aes(y = month , x=n) +
@@ -216,10 +247,10 @@ ggplot(data |> filter(date > "2019-11-14") |> filter(year=="2020") |> mutate(mon
     plot.background = element_rect(fill="#111111"),
     legend.key = element_blank(),
     legend.background = element_blank()
-  )
+  ) + labs (x="views")
 ```
 
-what happened during may 2021????
+What happened during may 2021????
 
 ```{r}
 data |> 
@@ -235,10 +266,10 @@ data |>
     plot.background = element_rect(fill="#111111"),
     legend.key = element_blank(),
     legend.background = element_blank()
-  )
+  ) + labs(y= "views", x = "day")
 ```
 
-the day i watched 179 videos
+The day i watched 179 videos:
 
 ```{r}
 ggplot(data |> ungroup() |> filter(date==as_date("2021-05-13"))) +
@@ -249,8 +280,10 @@ ggplot(data |> ungroup() |> filter(date==as_date("2021-05-13"))) +
     plot.background = element_rect(fill="#111111"),
     legend.key = element_blank(),
     legend.background = element_blank()
-  )
+  ) + labs(y= "views", x="time")
 ```
+
+Evolution of my most watched channels since 2019:
 
 ```{r}
 top_channels <- data  |> group_by(channel) |> summarise(n=n()) |> arrange(desc(n)) |> head(7) |> select("channel")
@@ -293,7 +326,8 @@ p.animation
 ```
 
 ```{r}
-p2<-ggplot(a)+
+p2<-ggplot(a
+           )+
   aes(x = week_since_beginning, y= n, color=channel, label = channel)+
   geom_line() + 
   theme_solarized_2(light=FALSE) + 
@@ -306,25 +340,4 @@ p2<-ggplot(a)+
   labs(x = "weeks since september 2019", y = "videos watched") 
 
 p2
-```
-
-```{r}
-a<-data |> mutate(week_since_beginning = week + 53*(year-2019)) |> group_by(week_since_beginning) |> summarise(n=n()) |> mutate( n = cumsum(n))
-
-ggplot(a)+
-  aes(x=week_since_beginning, y=n)+
-  theme_solarized_2(light=FALSE)+
-  theme(
-    panel.background = element_rect(fill=NA),
-    plot.background = element_rect(fill="#111111"),
-    legend.key = element_blank(),
-    legend.background = element_blank(),
-    legend.position = "none"
-  )+
-  geom_line(color="#586e75")
-
-```
-
-```{r}
-data |> select(title)
 ```
