@@ -117,7 +117,7 @@ ggplot(data |> group_by(hour) |> summarise(bin = n())) +
     plot.background = element_rect(fill="#111111"),
     legend.key = element_blank(),
     legend.background = element_blank()
-  )
+  ) + labs(y="views")
 ```
 
 Histogram of daily view counts:
